@@ -30,19 +30,52 @@
         
     </canvas>
     <script>
+        const WIDTH = 2048;
+        const HEIGHT = 2048;
+        const dimensions = [WIDTH, HEIGHT];
+        const backgroundColor = [255, 253, 252];
+        const padding = [40];
+        let nb = 30;
+        let dim = 0;
+        let margin = 0;
+
         function setup() {
-            createCanvas(windowWidth, windowHeight);
-            noStroke();
-            rectMode(CENTER);
+            createCanvas(WIDTH, HEIGHT);
+            noLoop();
+            dim = (WIDTH - 2 * margin) / nb;
         }
+
         function draw() {
-            clear();
-            fill(0, 255, 0);
-            const size = Math.min(width, height) * 0.2;
-            rect(width / 2, height / 2, size, size);
+            background(255);
+            for (let j = 0; j < nb; j = j + 1) {
+                for (let i = 0; i < nb; i = i + 1) {
+                    const x = margin + i * dim;
+                    const y = margin + j * dim;
+                    noFill();
+                    stroke(0);
+                    strokeWeight(4);
+                    const rnd = int(random(0, 4));
+                    if (rnd === 0) {
+                        line(x, y, x + dim, y + dim);
+                    } else if (rnd === 1) {
+                        line(x, y + dim, x + dim, y);
+                    } else if (rnd === 2) {
+                        line(x + dim / 2, y, x + dim / 2, y + dim);
+                    } else {
+                        line(x, y + dim / 2, x + dim, y + dim / 2);
+                    }
+                }
+            }
         }
-        function windowResized() {
-            resizeCanvas(windowWidth, windowHeight);
+
+        function keyPressed() {
+            if (key === 's') {
+                save('generatif.png');
+            }
+        }
+
+        function mouseClicked() {
+            redraw();
         }
     </script>
 </body>
