@@ -16,6 +16,7 @@
             z-index: 0;
             pointer-events: none;
             display: block;
+            cursor: none;
         }
         body {
             margin: 0;
@@ -28,5 +29,21 @@
     <canvas id="canvas">
         
     </canvas>
+    <script>
+        function setup() {
+            createCanvas(windowWidth, windowHeight);
+            noStroke();
+            rectMode(CENTER);
+        }
+        function draw() {
+            clear();
+            fill(0, 255, 0);
+            const size = Math.min(width, height) * 0.2;
+            rect(width / 2, height / 2, size, size);
+        }
+        function windowResized() {
+            resizeCanvas(windowWidth, windowHeight);
+        }
+    </script>
 </body>
 </html>
