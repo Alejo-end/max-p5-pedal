@@ -4,19 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MaxP5Pedal | Max for Live Device</title>
-    <script src="https://cdn.jsdelivr.net/npm/p5@1.11.0/lib/p5.min.js"></script>
     <style type="text/css">
         canvas {
-            background-color: blue;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            z-index: 0;
-            pointer-events: none;
-            display: block;
-            cursor: none;
+            background-color: wheat
         }
         body {
             margin: 0;
@@ -26,134 +16,101 @@
     </style>
 </head>
 <body>
-    <canvas id="canvas">
-        
-    </canvas>
+    <canvas></canvas>
     <script>
-        const WIDTH = window.innerWidth;
-        const HEIGHT = window.innerHeight;
-        const dimensions = [WIDTH, HEIGHT-40];
-        const backgroundColor = [255, 253, 252];
-        const padding = [5];
-        let nb = 10;
-        let dim = 0;
-        let margin = 0;
+        // Canvas setup (inspired by cool_pointer.html)
+        const canvas = document.querySelector('canvas');
+        const ctx = canvas.getContext('2d');
 
-        // Audio reactivity state
-        let audioLevelRaw = 0;      // 0..1 incoming
-        let audioLevel = 0;         // smoothed 0..1
+        // Grid configuration
+        let nb = 10;           // cells per axis
+        let margin = 0;        // outer margin in px
+        let cellSize = 0;      // computed from canvas size
+        let pattern = [];      // fixed random directions per cell
+
+        // Audio reactivity
+        let audioLevel = 0;        // smoothed 0..1
+        let audioLevelTarget = 0;  // incoming 0..1
         const smoothing = 0.15;
-        // Optional mic fallback (requires user gesture: press 'm')
-        let audioCtx = null;
-        let analyser = null;
-        let micSource = null;
-        let micBuffer = null;
-        let micEnabled = false;
 
-        // Grid pattern (stable lines, thickness reacts to audio)
-        let pattern = [];
+        function resize() {
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = Math.floor(window.innerWidth * dpr);
+            canvas.height = Math.floor(window.innerHeight * dpr);
+            canvas.style.width = window.innerWidth + 'px';
+            canvas.style.height = window.innerHeight + 'px';
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            cellSize = (window.innerWidth - 2 * margin) / nb;
+        }
+
         function generatePattern() {
-            pattern = new Array(nb);
+            pattern = Array.from({ length: nb }, () =>
+                Array.from({ length: nb }, () => Math.floor(Math.random() * 4))
+            );
+        }
+
+        function drawFrame() {
+            // Smooth audio
+            audioLevel += (audioLevelTarget - audioLevel) * smoothing;
+
+            // Clear and draw
+            ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 1 + audioLevel * 8; // map 0..1 to 1..9 px
+
             for (let j = 0; j < nb; j++) {
-                pattern[j] = new Array(nb);
                 for (let i = 0; i < nb; i++) {
-                    pattern[j][i] = int(random(0, 4));
+                    const x = margin + i * cellSize;
+                    const y = margin + j * cellSize;
+                    const rnd = pattern[j][i];
+
+                    ctx.beginPath();
+                    if (rnd === 0) {
+                        ctx.moveTo(x, y);
+                        ctx.lineTo(x + cellSize, y + cellSize);
+                    } else if (rnd === 1) {
+                        ctx.moveTo(x, y + cellSize);
+                        ctx.lineTo(x + cellSize, y);
+                    } else if (rnd === 2) {
+                        ctx.moveTo(x + cellSize / 2, y);
+                        ctx.lineTo(x + cellSize / 2, y + cellSize);
+                    } else {
+                        ctx.moveTo(x, y + cellSize / 2);
+                        ctx.lineTo(x + cellSize, y + cellSize / 2);
+                    }
+                    ctx.stroke();
                 }
             }
+
+            // Optional heartbeat to Max if desired
+            if (window.max && typeof window.max.outlet === 'function') {
+                // window.max.outlet('bang');
+            }
+
+            requestAnimationFrame(drawFrame);
         }
 
-        // Max bridge: call from Max with jweb 'evaljs' or postMessage
-        function setAudioLevel(level) {
-            const v = Number(level);
-            if (!isNaN(v)) {
-                audioLevelRaw = Math.max(0, Math.min(1, v));
+        // Max bridge: call from Max (jweb evaljs) to set audio [0..1]
+        function receiveAudioLevel(value) {
+            const v = Number(value);
+            if (!Number.isNaN(v)) {
+                audioLevelTarget = Math.max(0, Math.min(1, v));
             }
         }
-        window.receiveAudioLevel = setAudioLevel; // jweb evaljs("receiveAudioLevel(0.5)")
-        window.addEventListener('message', (e) => {
-            if (e && e.data && typeof e.data.audioLevel === 'number') {
-                setAudioLevel(e.data.audioLevel);
-            }
+        window.receiveAudioLevel = receiveAudioLevel; // e.g. evaljs("receiveAudioLevel(0.35)")
+
+        // Interactions
+        window.addEventListener('resize', () => {
+            resize();
+        });
+        window.addEventListener('click', () => {
+            generatePattern();
         });
 
-        async function startMic() {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                analyser = audioCtx.createAnalyser();
-                analyser.fftSize = 2048;
-                micSource = audioCtx.createMediaStreamSource(stream);
-                micSource.connect(analyser);
-                micBuffer = new Float32Array(analyser.fftSize);
-                micEnabled = true;
-            } catch (err) {
-                console.warn('Mic permission or initialization failed:', err);
-            }
-        }
-
-        function setup() {
-            createCanvas(WIDTH, HEIGHT);
-            frameRate(30);
-            dim = (width - 2 * margin) / nb;
-            generatePattern();
-            loop();
-        }
-
-        function draw() {
-            // Update mic fallback level if enabled
-            if (micEnabled && analyser && micBuffer) {
-                analyser.getFloatTimeDomainData(micBuffer);
-                let rms = 0;
-                for (let k = 0; k < micBuffer.length; k++) {
-                    const s = micBuffer[k];
-                    rms += s * s;
-                }
-                rms = Math.sqrt(rms / micBuffer.length);
-                // Scale RMS (~0..0.5 typical) into 0..1
-                audioLevelRaw = Math.max(0, Math.min(1, rms * 3));
-            }
-            // Smooth incoming level
-            audioLevel += (audioLevelRaw - audioLevel) * smoothing;
-
-            background(255);
-            for (let j = 0; j < nb; j = j + 1) {
-                for (let i = 0; i < nb; i = i + 1) {
-                    const x = margin + i * dim;
-                    const y = margin + j * dim;
-                    noFill();
-                    stroke(0);
-                    // Map audio to thickness: 1..9 px
-                    strokeWeight(1 + audioLevel * 8);
-                    const rnd = pattern[j][i];
-                    if (rnd === 0) {
-                        line(x, y, x + dim, y + dim);
-                    } else if (rnd === 1) {
-                        line(x, y + dim, x + dim, y);
-                    } else if (rnd === 2) {
-                        line(x + dim / 2, y, x + dim / 2, y + dim);
-                    } else {
-                        line(x, y + dim / 2, x + dim, y + dim / 2);
-                    }
-                }
-            }
-        }
-
-        function keyPressed() {
-            if (key === 's') {
-                save('generatif.png');
-            } else if (key === 'm') {
-                startMic();
-            }
-        }
-
-        function mouseClicked() {
-            redraw();
-        }
-
-        function windowResized() {
-            resizeCanvas(windowWidth, windowHeight);
-            dim = (width - 2 * margin) / nb;
-        }
+        // Init
+        resize();
+        generatePattern();
+        drawFrame();
     </script>
 </body>
 </html>
